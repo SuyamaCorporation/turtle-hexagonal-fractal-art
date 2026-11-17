@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>タートルグラフィクス六角形フラクタルアート</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0d0d1a; }
+    canvas { display: block; }
+    input[type=range] { accent-color: #818cf8; }
+  </style>
+</head>
+<body class="min-h-screen text-white flex flex-col items-center py-4 gap-4">
+  <h1 class="text-2xl font-bold text-indigo-300">タートルグラフィクス 六角形フラクタルアート</h1>
+
+  <div class="flex flex-wrap gap-3 items-center justify-center bg-gray-900 rounded-xl p-3 w-full max-w-3xl">
+    <label class="flex flex-col items-center text-xs text-gray-300 gap-1">
+      再帰深さ
+      <input type="range" id="sliderDepth" min="1" max="6" value="3" step="1" class="w-24" />
+      <span id="valDepth" class="text-indigo-300">3</span>
+    </label>
+    <label class="flex flex-col items-center text-xs text-gray-300 gap-1">
+      縮小比
+      <input type="range" id="sliderScale" min="30" max="70" value="45" step="1" class="w-24" />
+      <span id="valScale" class="text-indigo-300">0.45</span>
+    </label>
+    <label class="flex flex-col items-center text-xs text-gray-300 gap-1">
+      回転角 (°)
+      <input type="range" id="sliderRot" min="0" max="60" value="15" step="1" class="w-24" />
+      <span id="valRot" class="text-indigo-300">15°</span>
+    </label>
+    <label class="flex flex-col items-center text-xs text-gray-300 gap-1">
+      基本色相
+      <input type="range" id="sliderHue" min="0" max="360" value="200" step="5" class="w-24" />
+      <span id="valHue" class="text-indigo-300">200</span>
+    </label>
+    <label class="flex flex-col items-center text-xs text-gray-300 gap-1">
+      線幅
+      <input type="range" id="sliderLW" min="1" max="5" value="1" step="0.5" class="w-24" />
+      <span id="valLW" class="text-indigo-300">1</span>
+    </label>
+    <button id="btnDraw" class="px-3 py-1 rounded bg-purple-700 hover:bg-purple-600 text-sm">再描画</button>
+    <button id="btnSave" class="px-3 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-sm">PNG保存</button>
+  </div>
+
+  <canvas id="canvas" class="rounded-xl border border-gray-800"></canvas>
+
+  <script>
+  (() => {
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const SZ = Math.min(window.innerWidth - 32, 660);
+    canvas.width = SZ;
+    canvas.height = SZ;
+
+    let maxDepth = 3;
+    let scaleRatio = 0.45;
+    let rotOffset = 15;
+    let baseHue = 200;
+    let lineWidth = 1;
+
+    // ---- Turtle Engine ----
+    class Turtle {
+      constructor(ctx) {
+        this.ctx = ctx;
+        this.x = 0; this.y = 0;
+        this.angle = 0; // degrees, 0 = right
+        this.penDown = true;
+        ctx.beginPath();
+      }
+      forward(d) {
+        const nx = this.x + d * Math.cos(this.angle * Math.PI / 180);
+        const ny = this.y + d * Math.sin(this.angle * Math.PI / 180);
+        if (this.penDown) {
+          this.ctx.moveTo(this.x, this.y);
+          this.ctx.lineTo(nx, ny);
+        }
+        this.x = nx; this.y = ny;
+      }
+      turn(deg) { this.angle += deg; }
+      setPos(x, y) { this.x = x; this.y = y; }
+      setAngle(a) { this.angle = a; }
+    }
+
+    function drawHexFractal(t, cx, cy, radius, depth, startAngle) {
+      if (depth > maxDepth || radius < 1) return;
+
+      const hue = (baseHue + depth * 45) % 360;
+      const alpha = 1.0 - depth * 0.12;
+      ctx.strokeStyle = `hsla(${hue}, 90%, 65%, ${Math.max(alpha, 0.2)})`;
+      ctx.lineWidth = Math.max(lineWidth - depth * 0.15, 0.3);
+
+      // Draw hexagon at (cx, cy) with given radius using turtle
+      t.setPos(cx + radius * Math.cos(startAngle * Math.PI / 180), cy + radius * Math.sin(startAngle * Math.PI / 180));
+      t.setAngle(startAngle + 90);
+
+      ctx.beginPath();
+      ctx.moveTo(t.x, t.y);
+      const vertices = [];
+      for (let i = 0; i < 6; i++) {
+        const ang = (startAngle + i * 60) * Math.PI / 180;
+        const vx = cx + radius * Math.cos(ang);
+        const vy = cy + radius * Math.sin(ang);
+        vertices.push({ x: vx, y: vy });
+        if (i === 0) ctx.moveTo(vx, vy);
+        else ctx.lineTo(vx, vy);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      // Recurse at each vertex
+      if (depth < maxDepth) {
+        for (const v of vertices) {
+          drawHexFractal(t, v.x, v.y, radius * scaleRatio, depth + 1, startAngle + rotOffset);
+        }
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = '#0d0d1a';
+      ctx.fillRect(0, 0, SZ, SZ);
+
+      const t = new Turtle(ctx);
+      const initialRadius = SZ * 0.22;
+      drawHexFractal(t, SZ / 2, SZ / 2, initialRadius, 0, 0);
+    }
+
+    // Auto-redraw on slider
+    function bindSlider(id, valId, setter, fmt) {
+      const el = document.getElementById(id);
+      const span = document.getElementById(valId);
+      el.addEventListener('input', () => {
+        const v = parseFloat(el.value);
+        setter(v);
+        span.textContent = fmt ? fmt(v) : v;
+        draw();
+      });
+    }
+
+    bindSlider('sliderDepth', 'valDepth', v => { maxDepth = v; });
+    bindSlider('sliderScale', 'valScale', v => { scaleRatio = v / 100; }, v => (v / 100).toFixed(2));
+    bindSlider('sliderRot', 'valRot', v => { rotOffset = v; }, v => v + '°');
+    bindSlider('sliderHue', 'valHue', v => { baseHue = v; });
+    bindSlider('sliderLW', 'valLW', v => { lineWidth = v; });
+
+    document.getElementById('btnDraw').addEventListener('click', draw);
+    document.getElementById('btnSave').addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = '六角形フラクタル.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    });
+
+    draw();
+  })();
+  </script>
+</body>
+</html>
